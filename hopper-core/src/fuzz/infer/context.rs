@@ -72,4 +72,41 @@ impl Fuzzer {
         }
         Ok(None)
     }
+
+    pub fn infer_preferred_and_required_context(&mut self, program: &FuzzProgram) -> eyre::Result<Vec<ConstraintSig>> {
+        let mut new_constraints = vec![];
+        crate::log!(trace, "Inferring FuncConstraints.contexts (Preferred / Required contexts)");
+        
+        // Skip if program has no parent (it's a new seed)
+        // TODO: double check that at this point, the parent is filled correctly.
+        let Some(parent_id) = program.parent else {
+            return Ok(new_constraints);
+        };
+        
+        // Get parent program to compare
+        let parent = match self.depot.get_program_by_id(parent_id) {
+            Some(p) => p.clone(),
+            None => crate::read_input_in_queue(parent_id)?,
+        };
+        
+        // Find new implicit/relative calls that don't exist in parent
+        
+        // Get the coverage feedback of the original program
+        let original_coverage = self.observer.feedback.path.get_list();
+        crate::log!(trace, "Original coverage size: {}", original_coverage.len());
+        
+        // Iterate through new calls from bottom to top
+        for call_idx in new_calls.iter().rev() {
+            
+            // Create modified program without this call
+            
+            // Execute modified program
+            
+            // Check if it's a required context (status changed from normal)
+            
+            // Check if it's a preferred context (coverage decreased)
+        }
+        
+        Ok(new_constraints)
+    }
 }

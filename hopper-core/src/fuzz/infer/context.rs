@@ -73,9 +73,10 @@ impl Fuzzer {
         Ok(None)
     }
 
-    pub fn infer_preferred_and_required_context(&mut self, program: &FuzzProgram) -> eyre::Result<Vec<ConstraintSig>> {
+    pub fn infer_preferred_and_required_contexts(&mut self, program: &FuzzProgram) -> eyre::Result<Vec<ConstraintSig>> {
         let mut new_constraints = vec![];
         crate::log!(trace, "Inferring FuncConstraints.contexts (Preferred / Required contexts)");
+        crate::log!(trace, "Program being inferred: {}", program.serialize()?);
         
         // Skip if program has no parent (it's a new seed)
         // TODO: double check that at this point, the parent is filled correctly.
@@ -83,19 +84,44 @@ impl Fuzzer {
             return Ok(new_constraints);
         };
         
-        // Get parent program to compare
+        // Step 1: Get parent program to compare
         let parent = match self.depot.get_program_by_id(parent_id) {
             Some(p) => p.clone(),
             None => crate::read_input_in_queue(parent_id)?,
         };
         
-        // Find new implicit/relative calls that don't exist in parent
+        // Step 2: Find new implicit/relative calls that don't exist in parent
+        let mut new_calls = Vec::new();
+        for (idx, stmt) in program.stmts.iter().enumerate() {
+            if let FuzzStmt::Call(call) = &stmt.stmt {
+                // Check if this is an implicit or relative call
+                if call.is_implicit() || call.is_relative() {
+                    // See if this call exists in the parent program
+                    let is_new = !parent.stmts.iter().any(|parent_stmt| {
+                        if let FuzzStmt::Call(parent_call) = &parent_stmt.stmt {
+                            // Compare function names and args to determine if calls are equivalent
+                            call.fg.f_name == parent_call.fg.f_name
+                        } else {
+                            false
+                        }
+                    });
+                    
+                    if is_new {
+                        crate::log!(trace, "Found new implicit/relative call at index {}: {}", 
+                            idx, call.fg.f_name);
+                        new_calls.push(idx);
+                    }
+                }
+            }
+        }
         
-        // Get the coverage feedback of the original program
+        crate::log!(trace, "Found {} new implicit/relative calls", new_calls.len());
+        
+        // Step 3: Get the coverage feedback of the original program
         let original_coverage = self.observer.feedback.path.get_list();
         crate::log!(trace, "Original coverage size: {}", original_coverage.len());
         
-        // Iterate through new calls from bottom to top
+        // Step 4: Iterate through new calls from bottom to top
         for call_idx in new_calls.iter().rev() {
             
             // Create modified program without this call

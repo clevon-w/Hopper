@@ -376,7 +376,14 @@ impl Fuzzer {
         p.id = id;
 
         // ----- infer new constraints for the seed
-        if !self.seed_infer(&p)?.is_empty() {
+        let mut new_constraints = self.seed_infer(&p)?;
+        
+        // Infer preferred and required contexts between calls
+        if config::ENABLE_INTER_API_LEARN {
+            new_constraints.extend(self.infer_preferred_and_required_contexts(&p)?);
+        }
+        
+        if !new_constraints.is_empty() {
             p.refine_program()?;
         }
 

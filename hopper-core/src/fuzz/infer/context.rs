@@ -122,15 +122,114 @@ impl Fuzzer {
         crate::log!(trace, "Original coverage size: {}", original_coverage.len());
         
         // Step 4: Iterate through new calls from bottom to top
-        for call_idx in new_calls.iter().rev() {
-            
+        for &call_idx in new_calls.iter().rev() {
             // Create modified program without this call
+            let mut modified_program = program.clone();
+            modified_program.delete_stmt(call_idx);
+            modified_program.eliminate_invalidatd_contexts();
+            
+            // Get the target function name and call being removed
+            let target_call = if let Some(target_call) = program.get_target_stmt() {
+                target_call
+            } else {
+                continue;
+            };
+
+            let target_func_name = target_call.fg.f_name;
+            
+            let removed_call = match &program.stmts[call_idx].stmt {
+                FuzzStmt::Call(call) => call,
+                _ => continue,
+            };
+            
+            let removed_func_name = removed_call.fg.f_name;
+            
+            crate::log!(trace, "Testing removal of call at index {}: {} for target function {}", 
+                call_idx, removed_func_name, target_func_name);
             
             // Execute modified program
+            let status = self.executor.execute_program(&modified_program)?;
             
             // Check if it's a required context (status changed from normal)
+            if !status.is_normal() {
+                // Get the failure statement index to see which call actually crashed
+                let failure_stmt_idx = self.observer.feedback.last_stmt_index();  
+                
+                // Get the target call statement
+                let target_stmt_idx = if let Some(target_stmt_idx) = modified_program.get_target_index() {
+                    target_stmt_idx
+                } else {
+                    crate::log!(trace, "No target statement index found in modified program");
+                    continue;
+                };
+
+                crate::log!(trace, 
+                    "Status changed to {:?} after removing {}, failure at index {} (target at {})", 
+                    status, removed_func_name, failure_stmt_idx, target_stmt_idx);
+                
+                // Only infer required context if the crash occurs at the exact target function
+                if failure_stmt_idx == target_stmt_idx {
+                    crate::log!(trace, "Crash occurs at target function, inferring required context");
+                    
+                    let context = CallContext {
+                        f_name: removed_func_name.to_string(),
+                        related_arg_pos: removed_call.has_overlop_arg(program, target_call),
+                        kind: ContextKind::Required,
+                    };
+                    
+                    // Add the constraint
+                    if self.observer.op_stat.count_func_infer(&removed_func_name, program) {
+                        crate::inspect_function_constraint_mut_with(target_func_name, |fc| {
+                            fc.contexts.push(context.clone());
+                            log_new_constraint(&format!(
+                                "add required context on function `{target_func_name}`: {context:?}"
+                            ));
+                            Ok(())
+                        })?;
+                        
+                        // Add to result for hints
+                        new_constraints.push(ConstraintSig {
+                            f_name: target_func_name.to_string(),
+                            arg_pos: 0,
+                            fields: LocFields::default(),
+                            constraint: Constraint::Context { context },
+                        });
+                    }
+                }
+                continue;
+            }
             
             // Check if it's a preferred context (coverage decreased)
+            let modified_coverage = self.observer.feedback.path.get_list();
+            if modified_coverage.len() < original_coverage.len() {
+                crate::log!(trace, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
+                    original_coverage.len(), modified_coverage.len(), removed_func_name);
+                
+                let context = CallContext {
+                    f_name: removed_func_name.to_string(),
+                    related_arg_pos: removed_call.has_overlop_arg(program, target_call),
+                    kind: ContextKind::Prefered,
+                };
+                
+                // Add the constraint
+                if self.observer.op_stat.count_func_infer(&removed_func_name, program) {
+                    crate::inspect_function_constraint_mut_with(target_func_name, |fc| {
+                        fc.contexts.push(context.clone());
+                        log_new_constraint(&format!(
+                            "add preferred context on function `{target_func_name}`: {context:?}"
+                        ));
+                        Ok(())
+                    })?;
+                    
+                    // Add to result for hints
+                    new_constraints.push(ConstraintSig {
+                        f_name: target_func_name.to_string(),
+                        arg_pos: 0,
+                        fields: LocFields::default(),
+                        constraint: Constraint::Context { context },
+                    });
+                }
+            }
         }
         
         Ok(new_constraints)

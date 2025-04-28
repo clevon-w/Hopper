@@ -75,67 +75,71 @@ impl Fuzzer {
 
     pub fn infer_preferred_and_required_contexts(&mut self, program: &FuzzProgram) -> eyre::Result<Vec<ConstraintSig>> {
         let mut new_constraints = vec![];
-        crate::log!(trace, "Inferring FuncConstraints.contexts (Preferred / Required contexts)");
-        crate::log!(trace, "Program being inferred: {}", program.serialize()?);
+        crate::log!(debug, "Inferring FuncConstraints.contexts (Preferred / Required contexts)");
+        crate::log!(debug, "Program being inferred: {}", program.serialize()?);
         
-        // Skip if program has no parent (it's a new seed)
-        // TODO: double check that at this point, the parent is filled correctly.
-        let Some(parent_id) = program.parent else {
-            return Ok(new_constraints);
-        };
+        // Step 1: Get the coverage feedback of the original program
+        let original_coverage = self.observer.feedback.path.get_list();
+        crate::log!(debug, "Original coverage size: {}", original_coverage.len());
         
-        // Step 1: Get parent program to compare
-        let parent = match self.depot.get_program_by_id(parent_id) {
-            Some(p) => p.clone(),
-            None => crate::read_input_in_queue(parent_id)?,
-        };
-        
-        // Step 2: Find new implicit/relative calls that don't exist in parent
-        let mut new_calls = Vec::new();
+        // Step 2: Find all call statements (not just implicit/relative)
+        let mut call_statements = Vec::new();
         for (idx, stmt) in program.stmts.iter().enumerate() {
             if let FuzzStmt::Call(call) = &stmt.stmt {
-                // Check if this is an implicit or relative call
-                if call.is_implicit() || call.is_relative() {
-                    // See if this call exists in the parent program
-                    let is_new = !parent.stmts.iter().any(|parent_stmt| {
-                        if let FuzzStmt::Call(parent_call) = &parent_stmt.stmt {
-                            // Compare function names and args to determine if calls are equivalent
-                            call.fg.f_name == parent_call.fg.f_name
-                        } else {
-                            false
-                        }
-                    });
-                    
-                    if is_new {
-                        crate::log!(trace, "Found new implicit/relative call at index {}: {}", 
-                            idx, call.fg.f_name);
-                        new_calls.push(idx);
-                    }
+                // Don't include the target function itself
+                if !call.is_target() {
+                    crate::log!(debug, "Found call at index {}: {}", idx, call.fg.f_name);
+                    call_statements.push(idx);
                 }
             }
         }
         
-        crate::log!(trace, "Found {} new implicit/relative calls", new_calls.len());
+        crate::log!(debug, "Found {} call statements to analyze", call_statements.len());
         
-        // Step 3: Get the coverage feedback of the original program
-        let original_coverage = self.observer.feedback.path.get_list();
-        crate::log!(trace, "Original coverage size: {}", original_coverage.len());
+        // Get the target function name
+        let target_call = if let Some(target_call) = program.get_target_stmt() {
+            target_call
+        } else {
+            crate::log!(debug, "No target statement found in program");
+            return Ok(new_constraints);
+        };
+        let target_func_name = target_call.fg.f_name;
         
-        // Step 4: Iterate through new calls from bottom to top
-        for &call_idx in new_calls.iter().rev() {
-            // Create modified program without this call
-            let mut modified_program = program.clone();
-            modified_program.delete_stmt(call_idx);
-            modified_program.eliminate_invalidatd_contexts();
-            
-            // Get the target function name and call being removed
-            let target_call = if let Some(target_call) = program.get_target_stmt() {
-                target_call
+        // Step 3: Iterate through calls from bottom to top
+        for &call_idx in call_statements.iter().rev() {
+            // Check if the next statement is an assert that depends on this call
+            let has_dependent_assert = if call_idx + 1 < program.stmts.len() {
+                if let FuzzStmt::Assert(assert_stmt) = &program.stmts[call_idx + 1].stmt {
+                    // Check if this assert statement references our call
+                    if let Some(weak_idx) = assert_stmt.get_stmt() {
+                        if weak_idx.get() == call_idx {
+                            crate::log!(debug, "Found dependent assert at index {} for call at index {}", 
+                                call_idx + 1, call_idx);
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
             } else {
-                continue;
+                false
             };
-
-            let target_func_name = target_call.fg.f_name;
+            
+            // Create modified program without this call and its dependent assert (if any)
+            let mut modified_program = program.clone();
+            if has_dependent_assert {
+                // Remove both the call and the following assert
+                // We need to remove the assert first since it's after the call
+                modified_program.delete_stmt(call_idx + 1); // Remove the assert first
+                modified_program.delete_stmt(call_idx);     // Then remove the call
+            } else {
+                modified_program.delete_stmt(call_idx);
+            }
+            modified_program.eliminate_invalidatd_contexts();
             
             let removed_call = match &program.stmts[call_idx].stmt {
                 FuzzStmt::Call(call) => call,
@@ -144,8 +148,10 @@ impl Fuzzer {
             
             let removed_func_name = removed_call.fg.f_name;
             
-            crate::log!(trace, "Testing removal of call at index {}: {} for target function {}", 
-                call_idx, removed_func_name, target_func_name);
+            crate::log!(debug, "Testing removal of call at index {}{} for target function {}", 
+                call_idx, 
+                if has_dependent_assert { " and its dependent assert" } else { "" }, 
+                target_func_name);
             
             // Execute modified program
             let status = self.executor.execute_program(&modified_program)?;
@@ -159,17 +165,29 @@ impl Fuzzer {
                 let target_stmt_idx = if let Some(target_stmt_idx) = modified_program.get_target_index() {
                     target_stmt_idx
                 } else {
-                    crate::log!(trace, "No target statement index found in modified program");
+                    crate::log!(debug, "No target statement index found in modified program");
                     continue;
                 };
 
-                crate::log!(trace, 
+                crate::log!(debug, 
                     "Status changed to {:?} after removing {}, failure at index {} (target at {})", 
                     status, removed_func_name, failure_stmt_idx, target_stmt_idx);
                 
                 // Only infer required context if the crash occurs at the exact target function
                 if failure_stmt_idx == target_stmt_idx {
-                    crate::log!(trace, "Crash occurs at target function, inferring required context");
+                    crate::log!(debug, "Crash occurs at target function, inferring required context");
+                    
+                    // Check if this required context already exists
+                    let context_exists = filter_function_constraint_with(target_func_name, |fc| {
+                        fc.contexts.iter().any(|ctx| {
+                            ctx.f_name == removed_func_name && ctx.kind == ContextKind::Required
+                        })
+                    });
+                    
+                    if context_exists {
+                        crate::log!(debug, "Required context for {} already exists, skipping", removed_func_name);
+                        continue;
+                    }
                     
                     let context = CallContext {
                         f_name: removed_func_name.to_string(),
@@ -195,40 +213,59 @@ impl Fuzzer {
                             constraint: Constraint::Context { context },
                         });
                     }
+                } else {
+                    crate::log!(debug, "Failure doesn't occur at target function (idx {} vs target {}), skipping",
+                        failure_stmt_idx, target_stmt_idx);
                 }
                 continue;
             }
             
             // Check if it's a preferred context (coverage decreased)
-            let modified_coverage = self.observer.feedback.path.get_list();
-            if modified_coverage.len() < original_coverage.len() {
-                crate::log!(trace, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
-                    original_coverage.len(), modified_coverage.len(), removed_func_name);
-                
-                let context = CallContext {
-                    f_name: removed_func_name.to_string(),
-                    related_arg_pos: removed_call.has_overlop_arg(program, target_call),
-                    kind: ContextKind::Prefered,
-                };
-                
-                // Add the constraint
-                if self.observer.op_stat.count_func_infer(&removed_func_name, program) {
-                    crate::inspect_function_constraint_mut_with(target_func_name, |fc| {
-                        fc.contexts.push(context.clone());
-                        log_new_constraint(&format!(
-                            "add preferred context on function `{target_func_name}`: {context:?}"
-                        ));
-                        Ok(())
-                    })?;
+            if status.is_normal() {
+                let modified_coverage = self.observer.feedback.path.get_list();
+                if modified_coverage.len() < original_coverage.len() {
+                    crate::log!(debug, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
+                        original_coverage.len(), modified_coverage.len(), removed_func_name);
                     
-                    // Add to result for hints
-                    new_constraints.push(ConstraintSig {
-                        f_name: target_func_name.to_string(),
-                        arg_pos: 0,
-                        fields: LocFields::default(),
-                        constraint: Constraint::Context { context },
+                    // Check if this preferred context already exists
+                    let context_exists = filter_function_constraint_with(target_func_name, |fc| {
+                        fc.contexts.iter().any(|ctx| {
+                            ctx.f_name == removed_func_name && ctx.kind == ContextKind::Prefered
+                        })
                     });
+                    
+                    if context_exists {
+                        crate::log!(debug, "Preferred context for {} already exists, skipping", removed_func_name);
+                        continue;
+                    }
+                    
+                    let context = CallContext {
+                        f_name: removed_func_name.to_string(),
+                        related_arg_pos: removed_call.has_overlop_arg(program, target_call),
+                        kind: ContextKind::Prefered,
+                    };
+                    
+                    // Add the constraint
+                    if self.observer.op_stat.count_func_infer(&removed_func_name, program) {
+                        crate::inspect_function_constraint_mut_with(target_func_name, |fc| {
+                            fc.contexts.push(context.clone());
+                            log_new_constraint(&format!(
+                                "add preferred context on function `{target_func_name}`: {context:?}"
+                            ));
+                            Ok(())
+                        })?;
+                        
+                        // Add to result for hints
+                        new_constraints.push(ConstraintSig {
+                            f_name: target_func_name.to_string(),
+                            arg_pos: 0,
+                            fields: LocFields::default(),
+                            constraint: Constraint::Context { context },
+                        });
+                    }
                 }
+            } else {
+                crate::log!(debug, "Skipping preferred context check for newly generated program");
             }
         }
         

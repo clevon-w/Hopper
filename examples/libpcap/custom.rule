@@ -5,17 +5,6 @@ func_exclude pcap_freealldevs,pcap_geterr
 func_exclude pcap_dump_file,pcap_file,pcap_dump
 func_exclude pcap_open_live
 
-ctx pcap_activate[$0] <- pcap_set_buffer_size ?
-ctx pcap_activate[$0] <- pcap_set_snaplen ?
-ctx pcap_activate[$0] <- pcap_set_immediate_mode ?
-ctx pcap_activate[$0] <- pcap_set_datalink ?
-ctx pcap_activate[$0] <- pcap_set_protocol_linux ?
-ctx pcap_activate[$0] <- pcap_set_tstamp_precision ?
-ctx pcap_activate[$0] <- pcap_set_tstamp_type ?
-ctx pcap_activate[$0] <- pcap_set_timeout ?
-ctx pcap_activate[$0] <- pcap_set_rfmon ?
-ctx pcap_activate[$0] <- pcap_set_promisc ?
-
 # type pcap_pkthdr = $opaque
 # func pcap_open[$0] = $read_file
 # func pcap_dump_open_append[$1] = $write_file

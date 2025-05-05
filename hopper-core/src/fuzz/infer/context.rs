@@ -79,8 +79,10 @@ impl Fuzzer {
         crate::log!(debug, "Program being inferred: {}", program.serialize()?);
         
         // Step 1: Get the coverage feedback of the original program
-        let original_coverage = self.observer.feedback.path.get_list();
-        crate::log!(debug, "Original coverage size: {}", original_coverage.len());
+        // let original_coverage = self.observer.feedback.path.get_list();
+        // crate::log!(debug, "Original coverage size: {}", original_coverage.len());
+        let original_cmp_count = self.observer.feedback.instrs.cmp_len();
+        crate::log!(debug, "Original comparison count: {}", original_cmp_count);
         
         // Step 2: Find all call statements (not just implicit/relative)
         let mut call_statements = Vec::new();
@@ -222,10 +224,12 @@ impl Fuzzer {
             
             // Check if it's a preferred context (coverage decreased)
             if status.is_normal() {
-                let modified_coverage = self.observer.feedback.path.get_list();
-                if modified_coverage.len() < original_coverage.len() {
+                // let modified_coverage = self.observer.feedback.path.get_list();
+                let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
+                crate::log!(debug, "Modified comparison count: {}", modified_cmp_count);
+                if modified_cmp_count < original_cmp_count {
                     crate::log!(debug, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
-                        original_coverage.len(), modified_coverage.len(), removed_func_name);
+                        original_cmp_count, modified_cmp_count, removed_func_name);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {

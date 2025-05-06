@@ -49,7 +49,19 @@ impl FuzzProgram {
             .with_context(|| format!("fail to generate call `{f_name}`"))?;
         // only track target function
         call.track_cov = true;
-        let _stmt = program.append_stmt(call);
+        let call_idx = program.append_stmt(call);
+        
+        // Add an assert statement to check if the return value equals -2 (error code)
+        // First create a constant value of -2 as a statement
+        let neg_two_state = LoadStmt::new_state("error_code", "i32");
+        let neg_two_value = Box::new(-2_i32);
+        let neg_two_stmt = LoadStmt::new_const(neg_two_value, neg_two_state);
+        let neg_two_idx = program.append_stmt(neg_two_stmt);
+        
+        // Create assert statement that checks if call returns -2
+        let assert_stmt = AssertStmt::assert_neq(call_idx, neg_two_idx);
+        program.append_stmt(assert_stmt);
+        
         program.check_ref_use()?;
         program
             .refine_program()

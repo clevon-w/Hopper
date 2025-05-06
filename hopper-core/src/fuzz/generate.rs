@@ -58,8 +58,8 @@ impl FuzzProgram {
         let neg_two_stmt = LoadStmt::new_const(neg_two_value, neg_two_state);
         let neg_two_idx = program.append_stmt(neg_two_stmt);
         
-        // Create assert statement that checks if call returns -2
-        let assert_stmt = AssertStmt::assert_neq(call_idx, neg_two_idx);
+        // Create graceful failure assertion that checks if call returns -2
+        let assert_stmt = AssertStmt::assert_graceful_failure(call_idx, neg_two_idx);
         program.append_stmt(assert_stmt);
         
         program.check_ref_use()?;

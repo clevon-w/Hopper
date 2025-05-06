@@ -25,6 +25,11 @@ pub enum AssertRule {
     Neq {
         stmt: WeakStmtIndex,
         expected: StmtIndex,
+    },
+    /// A special assertion for graceful failure cases, specifically checking for error codes
+    GracefulFailure {
+        stmt: WeakStmtIndex,
+        expected: StmtIndex,
     }
 }
 
@@ -63,11 +68,17 @@ impl AssertStmt {
             rule: AssertRule::Neq { stmt: stmt.downgrade(), expected },
         }
     }
+    pub fn assert_graceful_failure(stmt: StmtIndex, expected: StmtIndex) -> Self {
+        Self {
+            rule: AssertRule::GracefulFailure { stmt: stmt.downgrade(), expected },
+        }
+    }
     pub fn get_stmt(&self) -> Option<&WeakStmtIndex> {
         match &self.rule {
             AssertRule::NonNull { stmt } => Some(stmt),
             AssertRule::Eq { stmt, expected: _ } => Some(stmt),
             AssertRule::Neq { stmt, expected: _ } => Some(stmt),
+            AssertRule::GracefulFailure { stmt, expected: _ } => Some(stmt),
             _ => None
         }
     }
@@ -183,6 +194,37 @@ impl StmtView for AssertStmt {
                     }
                 }
             }
+            AssertRule::GracefulFailure { stmt, expected } => {
+                let index = stmt.get();
+                let expected = expected.get();
+                if let FuzzStmt::Call(call) = &used_stmts[index].stmt {
+                    if let Some(val) = &call.ret {
+                        let expected_val = match &used_stmts[expected].stmt {
+                            FuzzStmt::Call(call) => {
+                                call.ret.as_ref().context("call should return value")?
+                            }
+                            FuzzStmt::Load(load) => &load.value,
+                            _ => {
+                                eyre::bail!("expected statement should be call or load.")
+                            }
+                        };
+                        eyre::ensure!(
+                            val.type_id() == expected_val.type_id(),
+                            "the compare values should have the same types"
+                        );
+                        let val_str = val.serialize()?;
+                        let expected_str = expected_val.serialize()?;
+                        if val_str != expected_str {
+                            eyre::bail!(crate::HopperError::AssertError {
+                                msg: format!(
+                                    "assert graceful failure but {val_str} != {expected_str}",
+                                ),
+                                silent: false
+                            });
+                        }
+                    }
+                }
+            }
             AssertRule::None => {}
         }
         Ok(())
@@ -216,6 +258,10 @@ impl CloneProgram for AssertRule {
                 expected: expected.clone_with_program(program),
             },
             AssertRule::Neq { stmt, expected } => AssertRule::Neq {
+                stmt: stmt.clone_with_program(program),
+                expected: expected.clone_with_program(program),
+            },
+            AssertRule::GracefulFailure { stmt, expected } => AssertRule::GracefulFailure {
                 stmt: stmt.clone_with_program(program),
                 expected: expected.clone_with_program(program),
             },

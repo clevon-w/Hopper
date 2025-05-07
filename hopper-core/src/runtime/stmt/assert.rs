@@ -146,13 +146,13 @@ impl StmtView for AssertStmt {
                                 eyre::bail!("expected statement should be call or load.")
                             }
                         };
-                        eyre::ensure!(
-                            val.type_id() == expected_val.type_id(),
-                            "the compare values should have the same types"
-                        );
+                        
                         let val_str = val.serialize()?;
                         let expected_str = expected_val.serialize()?;
-                        if val_str != expected_str {
+
+                        // Same type check has to be done here
+                        // because functions that do not return custom error, might return things other than an integer
+                        if val.type_id() == expected_val.type_id() && val_str != expected_str {
                             eyre::bail!(crate::HopperError::AssertError {
                                 msg: format!(
                                     "assert equal but {val_str} != {expected_str}",
@@ -197,27 +197,44 @@ impl StmtView for AssertStmt {
             AssertRule::GracefulFailure { stmt, expected } => {
                 let index = stmt.get();
                 let expected = expected.get();
+                crate::log!(
+                    debug,
+                    "assert graceful failure at {index}"
+                );
                 if let FuzzStmt::Call(call) = &used_stmts[index].stmt {
+                    crate::log!(
+                        debug,
+                        "For function {}",
+                        call.fg.f_name
+                    );
                     if let Some(val) = &call.ret {
                         let expected_val = match &used_stmts[expected].stmt {
-                            FuzzStmt::Call(call) => {
-                                call.ret.as_ref().context("call should return value")?
-                            }
                             FuzzStmt::Load(load) => &load.value,
                             _ => {
-                                eyre::bail!("expected statement should be call or load.")
+                                eyre::bail!("expected statement should be load.")
                             }
                         };
+                        crate::log!(
+                            debug,
+                            "expected value: {:?}",
+                            expected_val
+                        );
+                        
                         eyre::ensure!(
                             val.type_id() == expected_val.type_id(),
                             "the compare values should have the same types"
                         );
+                        crate::log!(debug, "value and expected have the same type: {:?}", val.type_id());
+                        
                         let val_str = val.serialize()?;
                         let expected_str = expected_val.serialize()?;
-                        if val_str != expected_str {
+                        crate::log!(debug, "val_str: {val_str}, expected_str: {expected_str}");
+
+                        if val_str == expected_str {
                             eyre::bail!(crate::HopperError::AssertError {
                                 msg: format!(
-                                    "assert graceful failure but {val_str} != {expected_str}",
+                                    "graceful failure check failed: {} returned error code {}, expected non-error execution",
+                                    call.fg.f_name, expected_str
                                 ),
                                 silent: false
                             });

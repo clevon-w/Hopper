@@ -51,6 +51,7 @@ impl Executor {
             match err {
                 HopperError::ProcessCrash { pid: _, signal } => StatusType::Crash { signal },
                 HopperError::ProcessTimeout { pid: _ } => StatusType::Timeout,
+                HopperError::AssertError { msg, silent: _ } if msg.contains("graceful failure check failed") => StatusType::GracefulFailure,
                 _ => StatusType::Ignore,
             }
         } else {

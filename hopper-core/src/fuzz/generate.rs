@@ -50,15 +50,12 @@ impl FuzzProgram {
         // only track target function
         call.track_cov = true;
         let call_idx = program.append_stmt(call);
-        
-        // Add an assert statement to check if the return value equals -2 (error code)
-        // First create a constant value of -2 as a statement
+
         let neg_two_state = LoadStmt::new_state("error_code", "i32");
         let neg_two_value = Box::new(-2_i32);
         let neg_two_stmt = LoadStmt::new_const(neg_two_value, neg_two_state);
         let neg_two_idx = program.append_stmt(neg_two_stmt);
         
-        // Create graceful failure assertion that checks if call returns -2
         let assert_stmt = AssertStmt::assert_graceful_failure(call_idx, neg_two_idx);
         program.append_stmt(assert_stmt);
         

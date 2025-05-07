@@ -37,14 +37,16 @@ pub use forklib_win::*;
 pub enum StatusType {
     /// program runs OK
     Normal,
-    /// program runs timeout
-    Timeout,
-    /// program crash
-    Crash { signal: Signal },
     /// Ignored cases (error) during executing
     Ignore,
+    /// program crash
+    Crash { signal: Signal },
+    /// program runs timeout
+    Timeout,
     /// Loop is endding
-    LoopEnd
+    LoopEnd,
+    /// Graceful failure assertion failed (found an error code)
+    GracefulFailure,
 }
 
 impl Default for StatusType {
@@ -68,6 +70,9 @@ impl StatusType {
     }
     pub fn is_loop_end(&self) -> bool {
         matches!(self, Self::LoopEnd)
+    }
+    pub fn is_graceful_failure(&self) -> bool {
+        matches!(self, Self::GracefulFailure)
     }
     pub fn is_abort(&self) -> bool {
         matches!(

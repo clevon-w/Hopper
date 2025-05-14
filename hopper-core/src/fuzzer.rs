@@ -380,7 +380,7 @@ impl Fuzzer {
         
         // Infer preferred and required contexts between calls
         if config::ENABLE_INTER_API_LEARN {
-            new_constraints.extend(self.infer_preferred_and_required_contexts(&p)?);
+            new_constraints.extend(self.infer_preferred_and_required_contexts(&p, status)?);
         }
         
         if !new_constraints.is_empty() {

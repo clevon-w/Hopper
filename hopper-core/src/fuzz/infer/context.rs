@@ -2,8 +2,7 @@
 //! e.g API A must not be called before API B.
 
 use eyre::ContextCompat;
-
-use crate::{fuzz::*, fuzzer::*, runtime::*};
+use crate::{fuzz::*, fuzzer::*, runtime::*, StatusType, FuzzMutPointer};
 
 impl Fuzzer {
     /// Infer that the crash is due to certain relative/implicit calls
@@ -73,16 +72,14 @@ impl Fuzzer {
         Ok(None)
     }
 
-    pub fn infer_preferred_and_required_contexts(&mut self, program: &FuzzProgram) -> eyre::Result<Vec<ConstraintSig>> {
+    pub fn infer_preferred_and_required_contexts(&mut self, program: &FuzzProgram, original_status: StatusType) -> eyre::Result<Vec<ConstraintSig>> {
         let mut new_constraints = vec![];
         crate::log!(debug, "Inferring FuncConstraints.contexts (Preferred / Required contexts)");
         crate::log!(debug, "Program being inferred: {}", program.serialize()?);
         
         // Step 1: Get the coverage feedback of the original program
-        // let original_coverage = self.observer.feedback.path.get_list();
-        // crate::log!(debug, "Original coverage size: {}", original_coverage.len());
-        let original_cmp_count = self.observer.feedback.instrs.cmp_len();
-        crate::log!(debug, "Original comparison count: {}", original_cmp_count);
+        let original_uniq_paths = self.observer.get_new_uniq_path(original_status);
+        crate::log!(debug, "Original unique paths size: {}", original_uniq_paths.len());
         
         // Step 2: Find all call statements (not just implicit/relative)
         let mut call_statements = Vec::new();
@@ -130,33 +127,88 @@ impl Fuzzer {
             } else {
                 false
             };
-            
-            // Create modified program without this call and its dependent assert (if any)
+
+            // Create a clone of the program to modify
             let mut modified_program = program.clone();
-            if has_dependent_assert {
-                // Remove both the call and the following assert
-                // We need to remove the assert first since it's after the call
-                modified_program.delete_stmt(call_idx + 1); // Remove the assert first
-                modified_program.delete_stmt(call_idx);     // Then remove the call
-            } else {
-                modified_program.delete_stmt(call_idx);
-            }
-            modified_program.eliminate_invalidatd_contexts();
             
-            let removed_call = match &program.stmts[call_idx].stmt {
-                FuzzStmt::Call(call) => call,
-                _ => continue,
+            // Store the function name before potentially modifying the statement
+            let removed_func_name = if let FuzzStmt::Call(call) = &program.stmts[call_idx].stmt {
+                call.fg.f_name.to_string()
+            } else {
+                continue;
             };
             
-            let removed_func_name = removed_call.fg.f_name;
+            // Check if statement is referenced by later statements using get_ref_used()
+            // A reference count of 1 means only self-reference, > 1 means referenced by others
+            let is_referenced = program.stmts[call_idx].index.get_ref_used() > 1;
+            crate::log!(debug, "Call at index {} has {} references", 
+                call_idx, program.stmts[call_idx].index.get_ref_used());
             
-            crate::log!(debug, "Testing removal of call at index {}{} for target function {}", 
+            // Choose approach based on whether the statement is referenced
+            if is_referenced {
+                // If referenced, replace it with a null pointer instead of removing it
+                if let FuzzStmt::Call(call) = &program.stmts[call_idx].stmt {
+                    // Get the return type either from ret object or from function signature
+                    let return_type = if let Some(ret_obj) = &call.ret {
+                        Some(ret_obj.type_name())
+                    } else if let Some(ret_type) = call.fg.ret_type {
+                        // Function has a return type in its signature
+                        Some(ret_type)
+                    } else {
+                        None
+                    };
+                    
+                    if let Some(return_type) = return_type {
+                        // Only handle non-void returns
+                        let ident = call.ident.clone();
+                        
+                        // First, remove the assert if it exists
+                        if has_dependent_assert {
+                            modified_program.delete_stmt(call_idx + 1);
+                        }
+                        
+                        // Create the null pointer statement
+                        let mut state = LoadStmt::new_state(&ident, return_type);
+                        let null_ptr = FuzzMutPointer::<()>::null(state.as_mut());
+                        let value = Box::new(null_ptr) as FuzzObject;
+                        let null_stmt = LoadStmt::new(value, state);
+                        
+                        // Delete the call statement and insert the null statement at the same position
+                        modified_program.delete_stmt(call_idx);
+                        let _null_index = modified_program.insert_stmt(call_idx, null_stmt);
+                        
+                        crate::log!(debug, "Replaced call at index {} with a null pointer of type {}", 
+                            call_idx, return_type);
+                    } else {
+                        // Non-returning call (void), just delete the statements
+                        if has_dependent_assert {
+                            modified_program.delete_stmt(call_idx + 1);
+                        }
+                        modified_program.delete_stmt(call_idx);
+                    }
+                }
+            } else {
+                // Not referenced, safe to delete
+                if has_dependent_assert {
+                    modified_program.delete_stmt(call_idx + 1); // Remove the assert first
+                    modified_program.delete_stmt(call_idx);     // Then remove the call
+                } else {
+                    modified_program.delete_stmt(call_idx);
+                }
+            }
+            
+            modified_program.eliminate_invalidatd_contexts();
+            
+            crate::log!(debug, "Testing removal/replacement of call at index {}{} for target function {}", 
                 call_idx, 
                 if has_dependent_assert { " and its dependent assert" } else { "" }, 
                 target_func_name);
+
+            crate::log!(debug, "Modified program: {}", modified_program.serialize()?);
             
             // Execute modified program
             let status = self.executor.execute_program(&modified_program)?;
+            crate::log!(debug, "Execution status of modified program: {:?}", status);
             
             // Check if it's a required context (status changed from normal)
             if !status.is_normal() {
@@ -191,6 +243,11 @@ impl Fuzzer {
                         continue;
                     }
                     
+                    let removed_call = match &program.stmts[call_idx].stmt {
+                        FuzzStmt::Call(call) => call,
+                        _ => continue,
+                    };
+                    
                     let context = CallContext {
                         f_name: removed_func_name.to_string(),
                         related_arg_pos: removed_call.has_overlop_arg(program, target_call),
@@ -224,12 +281,10 @@ impl Fuzzer {
             
             // Check if it's a preferred context (coverage decreased)
             if status.is_normal() {
-                // let modified_coverage = self.observer.feedback.path.get_list();
-                let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
-                crate::log!(debug, "Modified comparison count: {}", modified_cmp_count);
-                if modified_cmp_count < original_cmp_count {
+                let modified_uniq_paths = self.observer.get_new_uniq_path(status);
+                if modified_uniq_paths.len() < original_uniq_paths.len() {
                     crate::log!(debug, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
-                        original_cmp_count, modified_cmp_count, removed_func_name);
+                        original_uniq_paths.len(), modified_uniq_paths.len(), removed_func_name);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {
@@ -242,6 +297,11 @@ impl Fuzzer {
                         crate::log!(debug, "Preferred context for {} already exists, skipping", removed_func_name);
                         continue;
                     }
+                    
+                    let removed_call = match &program.stmts[call_idx].stmt {
+                        FuzzStmt::Call(call) => call,
+                        _ => continue,
+                    };
                     
                     let context = CallContext {
                         f_name: removed_func_name.to_string(),

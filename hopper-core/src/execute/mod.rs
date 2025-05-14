@@ -56,6 +56,9 @@ impl Default for StatusType {
 }
 
 impl StatusType {
+    pub fn is_functionally_normal(&self) -> bool {
+        matches!(self, Self::Normal | Self::GracefulFailure)
+    }
     pub fn is_normal(&self) -> bool {
         matches!(self, Self::Normal)
     }

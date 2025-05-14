@@ -51,7 +51,15 @@ impl Executor {
             match err {
                 HopperError::ProcessCrash { pid: _, signal } => StatusType::Crash { signal },
                 HopperError::ProcessTimeout { pid: _ } => StatusType::Timeout,
-                HopperError::AssertError { msg, silent: _ } if msg.contains("graceful failure check failed") => StatusType::GracefulFailure,
+                HopperError::AssertError { msg, silent: _ } => {
+                    crate::log!(debug, "Assert error message: '{}'", msg);
+                    if msg.contains("graceful failure check failed") {
+                        StatusType::GracefulFailure
+                    } else {
+                        crate::log!(debug, "Assert error not recognized as graceful failure, treating as Ignore");
+                        StatusType::Ignore
+                    }
+                },
                 _ => StatusType::Ignore,
             }
         } else {

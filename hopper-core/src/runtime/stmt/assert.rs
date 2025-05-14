@@ -220,17 +220,12 @@ impl StmtView for AssertStmt {
                             expected_val
                         );
                         
-                        eyre::ensure!(
-                            val.type_id() == expected_val.type_id(),
-                            "the compare values should have the same types"
-                        );
-                        crate::log!(debug, "value and expected have the same type: {:?}", val.type_id());
-                        
                         let val_str = val.serialize()?;
                         let expected_str = expected_val.serialize()?;
                         crate::log!(debug, "val_str: {val_str}, expected_str: {expected_str}");
 
-                        if val_str == expected_str {
+                        if val.type_id() == expected_val.type_id() && val_str == expected_str {
+                            crate::log!(debug, "FOUND A GRACEFUL FAILURE");
                             eyre::bail!(crate::HopperError::AssertError {
                                 msg: format!(
                                     "graceful failure check failed: {} returned error code {}, expected non-error execution",

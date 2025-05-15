@@ -82,10 +82,10 @@ impl Fuzzer {
         // };
         
         // Step 1: Get the coverage feedback of the original program
-        let original_uniq_paths = self.observer.get_new_uniq_path(original_status);
+        // let original_uniq_paths = self.observer.get_new_uniq_path(original_status);
         
-        // let original_path = self.observer.feedback.path.get_list();
-        // let original_path_len = original_path.len();
+        let original_path = self.observer.feedback.path.get_list();
+        let original_path_len = original_path.len();
         // let original_bucket_quality = calculate_quality(&original_path);
         
         // let original_cmp_count = self.observer.feedback.instrs.cmp_len();
@@ -294,10 +294,12 @@ impl Fuzzer {
             
             // Check if it's a preferred context (coverage decreased)
             if status.is_normal() {
-                let modified_uniq_paths = self.observer.get_new_uniq_path(status);
+                // let modified_uniq_paths = self.observer.get_new_uniq_path(status);
                 
-                // let modified_coverage = self.observer.feedback.path.get_list();
-                
+                let modified_path = self.observer.feedback.path.get_list();
+                let modified_path_len = modified_path.len();
+                // let modified_bucket_quality = calculate_quality(&modified_path);
+
                 // let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
                 
                 // let (modified_files, modified_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
@@ -307,9 +309,9 @@ impl Fuzzer {
                 // let modified_density = self.observer.branches_state.get_coverage_density();
     
 
-                if modified_uniq_paths.len() < original_uniq_paths.len() {
+                if modified_path_len < original_path_len {
                     crate::log!(debug, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
-                        original_uniq_paths.len(), modified_uniq_paths.len(), removed_func_name);
+                        original_path_len, modified_path_len, removed_func_name);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {

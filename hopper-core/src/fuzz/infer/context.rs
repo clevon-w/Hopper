@@ -88,9 +88,9 @@ impl Fuzzer {
         // let original_path_len = original_path.len();
         // let original_bucket_quality = calculate_quality(&original_path);
         
-        let original_cmp_count = self.observer.feedback.instrs.cmp_len();
+        // let original_cmp_count = self.observer.feedback.instrs.cmp_len();
 
-        // let (original_files, original_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
+        let (original_files, original_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
         
         // let original_density = self.observer.branches_state.get_coverage_density();
 
@@ -300,18 +300,18 @@ impl Fuzzer {
                 // let modified_path_len = modified_path.len();
                 // let modified_bucket_quality = calculate_quality(&modified_path);
 
-                let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
+                // let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
                 
-                // let (modified_files, modified_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
-                // let mem_decreased = original_mem_bytes > 0 && modified_mem_bytes < original_mem_bytes;
-                // let files_decreased = original_files > 0 && modified_files < original_files;
+                let (modified_files, modified_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
+                let mem_decreased = original_mem_bytes > 0 && modified_mem_bytes < original_mem_bytes;
+                let files_decreased = original_files > 0 && modified_files < original_files;
 
                 // let modified_density = self.observer.branches_state.get_coverage_density();
     
 
-                if modified_cmp_count < original_cmp_count {
-                    crate::log!(debug, "Coverage decreased from {} to {} after removing {}, this is a preferred context",
-                        original_cmp_count, modified_cmp_count, removed_func_name);
+                if mem_decreased || files_decreased {
+                    crate::log!(debug, "mem_decreased: {} / files_decreased: {}", 
+                        mem_decreased, files_decreased);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {

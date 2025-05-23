@@ -90,9 +90,9 @@ impl Fuzzer {
         
         // let original_cmp_count = self.observer.feedback.instrs.cmp_len();
 
-        let (original_files, original_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
+        // let (original_files, original_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
         
-        // let original_density = self.observer.branches_state.get_coverage_density();
+        let original_density = self.observer.branches_state.get_coverage_density();
 
         // Step 2: Find all call statements (not just implicit/relative)
         let mut call_statements = Vec::new();
@@ -302,16 +302,15 @@ impl Fuzzer {
 
                 // let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
                 
-                let (modified_files, modified_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
-                let mem_decreased = original_mem_bytes > 0 && modified_mem_bytes < original_mem_bytes;
-                let files_decreased = original_files > 0 && modified_files < original_files;
+                // let (modified_files, modified_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
+                // let mem_decreased = original_mem_bytes > 0 && modified_mem_bytes < original_mem_bytes;
+                // let files_decreased = original_files > 0 && modified_files < original_files;
 
-                // let modified_density = self.observer.branches_state.get_coverage_density();
+                let modified_density = self.observer.branches_state.get_coverage_density();
     
 
-                if mem_decreased || files_decreased {
-                    crate::log!(debug, "mem_decreased: {} / files_decreased: {}", 
-                        mem_decreased, files_decreased);
+                if modified_density < original_density{
+                    crate::log!(debug, "Coverage density decreased from {} to {}", original_density, modified_density);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {

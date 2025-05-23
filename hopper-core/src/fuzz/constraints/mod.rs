@@ -25,6 +25,8 @@ pub struct Constraints {
     pub func_constraints: HashMap<String, FuncConstraint>,
     /// Constraints for types (Generic)
     pub type_constraints: HashMap<String, TypeConstraint>,
+    /// Error codes for graceful failure checks
+    pub error_codes: Vec<ErrorCode>,
 }
 
 thread_local! {
@@ -97,6 +99,11 @@ pub fn filter_target_function(f_name: &str) -> bool {
 #[inline]
 pub fn filter_fn_pointer(f_name: &str) -> bool {
     f_name.starts_with(FN_POINTER_PREFIX)
+}
+
+/// Get a list of all defined error codes
+pub fn get_error_codes() -> Vec<ErrorCode> {
+    CONSTRAINTS.with(|c| c.borrow().error_codes.clone())
 }
 
 #[inline]

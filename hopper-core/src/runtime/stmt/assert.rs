@@ -5,7 +5,7 @@
 use eyre::ContextCompat;
 use hopper_derive::Serde;
 
-use crate::{feedback::ResourceStates, runtime::*, utils};
+use crate::{feedback::ResourceStates, runtime::*, utils, fuzz::constraints};
 
 #[derive(Debug, Clone, Serde)]
 pub enum AssertRule {
@@ -26,10 +26,9 @@ pub enum AssertRule {
         stmt: WeakStmtIndex,
         expected: StmtIndex,
     },
-    /// A special assertion for graceful failure cases, specifically checking for error codes
+    /// A special assertion for graceful failure cases, checking if return value is in the error code list
     GracefulFailure {
         stmt: WeakStmtIndex,
-        expected: StmtIndex,
     }
 }
 
@@ -68,9 +67,11 @@ impl AssertStmt {
             rule: AssertRule::Neq { stmt: stmt.downgrade(), expected },
         }
     }
-    pub fn assert_graceful_failure(stmt: StmtIndex, expected: StmtIndex) -> Self {
+    // Update to use error codes from constraints directly
+    pub fn assert_graceful_failure(stmt: StmtIndex) -> Self {
+        // Ignore the expected parameter for backward compatibility
         Self {
-            rule: AssertRule::GracefulFailure { stmt: stmt.downgrade(), expected },
+            rule: AssertRule::GracefulFailure { stmt: stmt.downgrade() },
         }
     }
     pub fn get_stmt(&self) -> Option<&WeakStmtIndex> {
@@ -78,7 +79,7 @@ impl AssertStmt {
             AssertRule::NonNull { stmt } => Some(stmt),
             AssertRule::Eq { stmt, expected: _ } => Some(stmt),
             AssertRule::Neq { stmt, expected: _ } => Some(stmt),
-            AssertRule::GracefulFailure { stmt, expected: _ } => Some(stmt),
+            AssertRule::GracefulFailure { stmt } => Some(stmt),
             _ => None
         }
     }
@@ -194,9 +195,8 @@ impl StmtView for AssertStmt {
                     }
                 }
             }
-            AssertRule::GracefulFailure { stmt, expected } => {
+            AssertRule::GracefulFailure { stmt } => {
                 let index = stmt.get();
-                let expected = expected.get();
                 crate::log!(
                     debug,
                     "assert graceful failure at {index}"
@@ -208,28 +208,38 @@ impl StmtView for AssertStmt {
                         call.fg.f_name
                     );
                     if let Some(val) = &call.ret {
-                        let expected_val = match &used_stmts[expected].stmt {
-                            FuzzStmt::Load(load) => &load.value,
-                            _ => {
-                                eyre::bail!("expected statement should be load.")
-                            }
-                        };
-                        crate::log!(
-                            debug,
-                            "expected value: {:?}",
-                            expected_val
-                        );
+                        // Get all defined error codes from constraints
+                        let error_codes = constraints::get_error_codes();
                         
+                        // If no error codes are defined, use default -2
+                        let error_values = if error_codes.is_empty() {
+                            vec![-2]
+                        } else {
+                            error_codes.iter().map(|e| e.value).collect::<Vec<_>>()
+                        };
+                        
+                        // Serialize the return value for comparison
                         let val_str = val.serialize()?;
-                        let expected_str = expected_val.serialize()?;
-                        crate::log!(debug, "val_str: {val_str}, expected_str: {expected_str}");
-
-                        if val.type_id() == expected_val.type_id() && val_str == expected_str {
-                            crate::log!(debug, "FOUND A GRACEFUL FAILURE");
+                        
+                        // Check if the return value matches any of the error codes
+                        let is_error_code = error_values.iter().any(|&code| {
+                            // Convert error code to string for comparison
+                            let code_str = if let Ok(code_i32) = i32::try_from(code) {
+                                code_i32.to_string()
+                            } else {
+                                code.to_string()
+                            };
+                            
+                            // Check if the function returned this error code
+                            val_str == code_str
+                        });
+                        
+                        if is_error_code {
+                            crate::log!(debug, "FOUND A GRACEFUL FAILURE: {}", val_str);
                             eyre::bail!(crate::HopperError::AssertError {
                                 msg: format!(
                                     "graceful failure check failed: {} returned error code {}, expected non-error execution",
-                                    call.fg.f_name, expected_str
+                                    call.fg.f_name, val_str
                                 ),
                                 silent: false
                             });
@@ -273,9 +283,8 @@ impl CloneProgram for AssertRule {
                 stmt: stmt.clone_with_program(program),
                 expected: expected.clone_with_program(program),
             },
-            AssertRule::GracefulFailure { stmt, expected } => AssertRule::GracefulFailure {
+            AssertRule::GracefulFailure { stmt } => AssertRule::GracefulFailure {
                 stmt: stmt.clone_with_program(program),
-                expected: expected.clone_with_program(program),
             },
             _ => self.clone(),
         }

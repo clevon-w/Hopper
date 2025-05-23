@@ -51,14 +51,10 @@ impl FuzzProgram {
         call.track_cov = true;
         let call_idx = program.append_stmt(call);
 
-        let neg_two_state = LoadStmt::new_state("error_code", "i32"); // generate the state
-        let neg_two_value = Box::new(-2_i32); // hardcode a error code of -2 for testing purposes
-        let neg_two_stmt = LoadStmt::new_const(neg_two_value, neg_two_state); // create a new load statement as a const
-        neg_two_stmt.state.replace_weight(0); // set the weight to 0 so it will not be chosen for mutation
-        let neg_two_idx = program.append_stmt(neg_two_stmt); // append the load to the end of the program
-        
-        let assert_stmt = AssertStmt::assert_graceful_failure(call_idx, neg_two_idx); // create the assert statement to check for the graceful failure
-        program.append_stmt(assert_stmt); // append the assert statement to the program
+        // Create an assertion to check for graceful failures
+        // This will directly use the error codes from custom.rule file
+        let assert_stmt = AssertStmt::assert_graceful_failure(call_idx);
+        program.append_stmt(assert_stmt);
         
         program.check_ref_use()?;
         program

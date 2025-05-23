@@ -23,6 +23,13 @@ pub enum Constraint {
     None,
 }
 
+/// Error code definition for graceful failure checks
+#[derive(Debug, Clone, Serde)]
+pub struct ErrorCode {
+    pub value: i64,
+    pub description: Option<String>,
+}
+
 /// Function constraint
 #[derive(Debug, Default, Clone, Serde)]
 pub struct FuncConstraint {

@@ -15,6 +15,13 @@ impl Constraints {
         for (t, constraint) in self.type_constraints.iter() {
             let _ = writeln!(buf, "type {} = {}", t, constraint.serialize()?);
         }
+        for error in &self.error_codes {
+            if let Some(desc) = &error.description {
+                let _ = writeln!(buf, "err {} \"{}\"", error.value, desc);
+            } else {
+                let _ = writeln!(buf, "err {}", error.value);
+            }
+        }
         if !buf.is_empty() {
             let mut f = std::fs::File::create(path)?;
             crate::log!(info, "write constraints to file : {:?}", path);
@@ -101,6 +108,27 @@ impl Constraints {
             }
             let ty = de.next_token_until(" ")?.trim();
             match ty {
+                "err" => {
+                    de.trim_start();
+                    let value_str = de.next_token_until(" ")?.trim();
+                    let value = value_str.parse::<i64>()
+                        .with_context(|| format!("Failed to parse error code value: {}", value_str))?;
+                    
+                    de.trim_start();
+                    // Check for optional description in quotes
+                    let description = if de.peek_char() == Some('"') {
+                        de.eat_token("\"")?;
+                        let desc = de.next_token_until("\"")?;
+                        de.eat_token("\"")?;
+                        Some(desc.to_string())
+                    } else {
+                        None
+                    };
+                    
+                    let desc_for_log = description.as_deref().unwrap_or("").to_string();
+                    self.error_codes.push(ErrorCode { value, description });
+                    crate::log!(info, "Added error code {} {}", value, desc_for_log);
+                }
                 "alias" => {
                     let alias_name = de.next_token_until("<-")?.trim();
                     let alias_name = utils::get_static_ty(alias_name);

@@ -83,6 +83,35 @@ impl Fuzzer {
                 break;
             }
             self.print_log(true);
+
+            // set the "phase" within evolution
+            // might have to optimise the 10k
+            match (self.rounds / 10000) % 3 {
+                0 => {
+                    // doing learning with 50% chance to use what we learnt
+                    config::ENABLE_CONTEXT_LEARNING.store(true, Ordering::SeqCst);
+                    config::ENABLE_EXPLORATORY_FUZZING.store(false, Ordering::SeqCst);
+                }
+                1 => {
+                    // doing learning with 10% chance to use what we learnt
+                    // this is to allow for more chances of learning from random exploration
+                    config::ENABLE_CONTEXT_LEARNING.store(true, Ordering::SeqCst);
+                    config::ENABLE_EXPLORATORY_FUZZING.store(true, Ordering::SeqCst);
+                }
+                2 => {
+                    // not doing learning, 10% chance to use what we learnt
+                    // to prevent tunnel vision from what we have learnt
+                    config::ENABLE_CONTEXT_LEARNING.store(false, Ordering::SeqCst);
+                    config::ENABLE_EXPLORATORY_FUZZING.store(true, Ordering::SeqCst);
+                }
+                _ => {
+                    // This arm should never be hit, but is required for exhaustiveness.
+                    // this is the release version
+                    config::ENABLE_CONTEXT_LEARNING.store(false, Ordering::SeqCst);
+                    config::ENABLE_EXPLORATORY_FUZZING.store(false, Ordering::SeqCst);
+                }
+            }
+
             let has_new = if config::ENABLE_MUTATE && cond_likely(self.rounds > 2500) {
                 self.mutate_round()?
             } else {
@@ -379,7 +408,7 @@ impl Fuzzer {
         let mut new_constraints = self.seed_infer(&p)?;
         
         // Infer preferred and required contexts between calls
-        if config::ENABLE_INTER_API_LEARN {
+        if config::ENABLE_CONTEXT_LEARNING.load(Ordering::SeqCst) {
             new_constraints.extend(self.infer_preferred_and_required_contexts(&p, status)?);
         }
         

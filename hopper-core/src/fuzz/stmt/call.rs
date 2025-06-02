@@ -4,6 +4,8 @@
 //!  - mutate call function's return value
 //!  - insert or delete functions that has implicit relationships
 
+use std::sync::atomic::Ordering;
+
 use crate::{config, utils};
 
 use super::*;
@@ -629,7 +631,12 @@ impl CallStmt {
         crate::log!(trace, "try find implicit context..");
         let mut use_f_name = None;
         // add optional implict context constraint
-        if rng::coin() {
+        let chance = if config::ENABLE_EXPLORATORY_FUZZING.load(Ordering::SeqCst) {
+            rng::rarely()
+        } else {
+            rng::coin()
+        };
+        if chance {
             filter_function_constraint_with(&self.name, |fc| {
                 if let Some(ctx) = rng::choose_iter(fc.contexts.iter().filter(|ctx| {
                     ctx.related_arg_pos.is_none()
@@ -739,7 +746,12 @@ impl CallStmt {
         let rng_state = rng::save_rng_state();
         let mut relative_f = None;
         // add optional context
-        if !init_opaque && rng::coin() {
+        let chance = if config::ENABLE_EXPLORATORY_FUZZING.load(Ordering::SeqCst) {
+            rng::rarely()
+        } else {
+            rng::coin()
+        };
+        if !init_opaque && chance {
             let mut use_ctx = None;
             filter_function_constraint_with(&self.name, |fc| {
                 let optioanl_ctxs = fc.contexts.iter().filter(|ctx| {

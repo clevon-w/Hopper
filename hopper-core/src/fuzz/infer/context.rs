@@ -77,22 +77,22 @@ impl Fuzzer {
         crate::log!(debug, "Inferring FuncConstraints.contexts (Preferred / Required contexts)");
         crate::log!(debug, "Program being inferred: {}", program.serialize()?);
 
-        // let calculate_quality = |coverage: &[(usize, BucketType)]| -> u64 {
-        //     coverage.iter().map(|(_, bucket)| *bucket as u64).sum()
-        // };
+        let calculate_quality = |coverage: &[(usize, BucketType)]| -> u64 {
+            coverage.iter().map(|(_, bucket)| *bucket as u64).sum()
+        };
         
         // Step 1: Get the coverage feedback of the original program
         // let original_uniq_paths = self.observer.get_new_uniq_path(original_status);
         
-        // let original_path = self.observer.feedback.path.get_list();
+        let original_path = self.observer.feedback.path.get_list();
         // let original_path_len = original_path.len();
-        // let original_bucket_quality = calculate_quality(&original_path);
+        let original_bucket_quality = calculate_quality(&original_path);
         
         // let original_cmp_count = self.observer.feedback.instrs.cmp_len();
 
         // let (original_files, original_mem_bytes) = self.observer.feedback.instrs.count_allocated_resources();
         
-        let original_density = self.observer.branches_state.get_coverage_density();
+        // let original_density = self.observer.branches_state.get_coverage_density();
 
         // Step 2: Find all call statements (not just implicit/relative)
         let mut call_statements = Vec::new();
@@ -296,9 +296,9 @@ impl Fuzzer {
             if status.is_normal() {
                 // let modified_uniq_paths = self.observer.get_new_uniq_path(status);
                 
-                // let modified_path = self.observer.feedback.path.get_list();
+                let modified_path = self.observer.feedback.path.get_list();
                 // let modified_path_len = modified_path.len();
-                // let modified_bucket_quality = calculate_quality(&modified_path);
+                let modified_bucket_quality = calculate_quality(&modified_path);
 
                 // let modified_cmp_count = self.observer.feedback.instrs.cmp_len();
                 
@@ -306,11 +306,11 @@ impl Fuzzer {
                 // let mem_decreased = original_mem_bytes > 0 && modified_mem_bytes < original_mem_bytes;
                 // let files_decreased = original_files > 0 && modified_files < original_files;
 
-                let modified_density = self.observer.branches_state.get_coverage_density();
+                // let modified_density = self.observer.branches_state.get_coverage_density();
     
 
-                if modified_density < original_density{
-                    crate::log!(debug, "Coverage density decreased from {} to {}", original_density, modified_density);
+                if modified_bucket_quality < original_bucket_quality {
+                    crate::log!(debug, "Coverage density decreased from {} to {}", original_bucket_quality, modified_bucket_quality);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {

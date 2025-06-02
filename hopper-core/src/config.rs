@@ -16,6 +16,10 @@ pub const ENABLE_MUTATE: bool = true;
 pub const ENABLE_EFF_ARG: bool = true;
 // enable inter api infer
 pub const ENABLE_INTER_API_LEARN: bool = true;
+// enable preferred / required context learning
+pub static ENABLE_CONTEXT_LEARNING: AtomicBool = AtomicBool::new(true);
+// enable exploratory fuzzing
+pub static ENABLE_EXPLORATORY_FUZZING: AtomicBool = AtomicBool::new(false);
 
 // --- SHM and branch config ---
 #[cfg(feature = "fat_bucket")]
@@ -150,7 +154,7 @@ pub struct Config {
 
 use eyre::Context;
 use once_cell::sync::OnceCell;
-use std::io::BufRead;
+use std::{io::BufRead, sync::atomic::AtomicBool};
 
 pub static mut CONFIG_INSTANCE: Option<Config> = None;
 

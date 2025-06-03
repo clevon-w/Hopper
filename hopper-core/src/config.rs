@@ -16,10 +16,6 @@ pub const ENABLE_MUTATE: bool = true;
 pub const ENABLE_EFF_ARG: bool = true;
 // enable inter api infer
 pub const ENABLE_INTER_API_LEARN: bool = true;
-// enable preferred / required context learning
-pub static ENABLE_CONTEXT_LEARNING: AtomicBool = AtomicBool::new(true);
-// enable exploratory fuzzing
-pub static ENABLE_EXPLORATORY_FUZZING: AtomicBool = AtomicBool::new(false);
 
 // --- SHM and branch config ---
 #[cfg(feature = "fat_bucket")]
@@ -105,6 +101,7 @@ pub const MAX_ROUND_FAIL_NUM: usize = 20;
 // The maximal number of rounds if we has found nothing with single call
 pub const ROUND_STUCK_NUM: usize = 50;
 pub const ENABLE_APPEND_NEW_TARGET: bool = true;
+pub const ROUND_SAME_DENSITY_NUM: usize = 1000;
 /// --- Constraint ---
 pub const MAX_RANGE_NUM: u64 = 4096;
 pub const RESERVED_FD_MIN: i32 = 3;

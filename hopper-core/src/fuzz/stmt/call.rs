@@ -631,7 +631,8 @@ impl CallStmt {
         crate::log!(trace, "try find implicit context..");
         let mut use_f_name = None;
         // add optional implict context constraint
-        let chance = if config::ENABLE_EXPLORATORY_FUZZING.load(Ordering::SeqCst) {
+        let chance = if is_enable_exploratory_fuzzing() {
+            crate::log!(debug, "calling rarely");
             rng::rarely()
         } else {
             rng::coin()
@@ -746,7 +747,8 @@ impl CallStmt {
         let rng_state = rng::save_rng_state();
         let mut relative_f = None;
         // add optional context
-        let chance = if config::ENABLE_EXPLORATORY_FUZZING.load(Ordering::SeqCst) {
+        let chance = if is_enable_exploratory_fuzzing() {
+            crate::log!(debug, "calling rarely");
             rng::rarely()
         } else {
             rng::coin()

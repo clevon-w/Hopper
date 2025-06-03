@@ -22,6 +22,10 @@ thread_local! {
     pub static PILOT_INFER: Cell<bool> = Cell::new(false);
     // u64 temp value
     pub static TMP_U64: Cell<u64> = Cell::new(0);
+    // Prioritise exploration during evolution phase
+    pub static ENABLE_EXPLORATORY_FUZZING: Cell<bool> = Cell::new(false);
+    // Turn on / off context learning
+    pub static ENABLE_CONTEXT_LEARNING: Cell<bool> = Cell::new(true);
 }
 
 pub fn is_pilot_det() -> bool {
@@ -94,6 +98,22 @@ pub fn set_tmp_u64(val: u64) {
 
 pub fn get_tmp_u64() -> u64 {
     TMP_U64.with(|c| c.get())
+}
+
+pub fn is_enable_exploratory_fuzzing() -> bool {
+    ENABLE_EXPLORATORY_FUZZING.with(|c| c.get())
+}
+
+pub fn set_enable_exploratory_fuzzing(flag: bool) -> bool {
+    ENABLE_EXPLORATORY_FUZZING.with(|c| c.replace(flag))
+}
+
+pub fn is_enable_context_learning() -> bool {
+    ENABLE_CONTEXT_LEARNING.with(|c| c.get())
+}
+
+pub fn set_enable_context_learning(flag: bool) -> bool {
+    ENABLE_CONTEXT_LEARNING.with(|c| c.replace(flag))
 }
 
 /// Enable call's deterministic mutation

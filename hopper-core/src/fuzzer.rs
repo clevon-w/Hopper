@@ -27,6 +27,9 @@ pub struct Fuzzer {
     stuck: usize,
     start_at: time::Instant,
     found_abort: bool,
+    // -- Coverage density --
+    previous_density: f32,
+    same_density_count: usize,
 }
 
 impl Fuzzer {
@@ -48,6 +51,8 @@ impl Fuzzer {
             stuck: 0,
             start_at,
             found_abort: false,
+            previous_density: 0.0,
+            same_density_count: 0,
         })
     }
 
@@ -84,32 +89,21 @@ impl Fuzzer {
             }
             self.print_log(true);
 
-            // set the "phase" within evolution
-            // might have to optimise the 10k
-            match (self.rounds / 10000) % 3 {
-                0 => {
-                    // doing learning with 50% chance to use what we learnt
-                    config::ENABLE_CONTEXT_LEARNING.store(true, Ordering::SeqCst);
-                    config::ENABLE_EXPLORATORY_FUZZING.store(false, Ordering::SeqCst);
-                }
-                1 => {
-                    // doing learning with 10% chance to use what we learnt
-                    // this is to allow for more chances of learning from random exploration
-                    config::ENABLE_CONTEXT_LEARNING.store(true, Ordering::SeqCst);
-                    config::ENABLE_EXPLORATORY_FUZZING.store(true, Ordering::SeqCst);
-                }
-                2 => {
-                    // not doing learning, 10% chance to use what we learnt
-                    // to prevent tunnel vision from what we have learnt
-                    config::ENABLE_CONTEXT_LEARNING.store(false, Ordering::SeqCst);
-                    config::ENABLE_EXPLORATORY_FUZZING.store(true, Ordering::SeqCst);
-                }
-                _ => {
-                    // This arm should never be hit, but is required for exhaustiveness.
-                    // this is the release version
-                    config::ENABLE_CONTEXT_LEARNING.store(false, Ordering::SeqCst);
-                    config::ENABLE_EXPLORATORY_FUZZING.store(false, Ordering::SeqCst);
-                }
+            let curr_density = self.observer.branches_state.get_coverage_density();
+            if curr_density == self.previous_density {
+                self.same_density_count += 1;
+            } else if curr_density > self.previous_density {
+                self.previous_density = curr_density;
+                self.same_density_count = 0;
+            }
+
+            if self.same_density_count > config::ROUND_SAME_DENSITY_NUM {
+                log!(
+                    warn,
+                    "Coverage density is not changed for {} rounds, turning on exploratory fuzzing !",
+                    self.same_density_count
+                );
+                set_enable_exploratory_fuzzing(true);
             }
 
             let has_new = if config::ENABLE_MUTATE && cond_likely(self.rounds > 2500) {
@@ -408,7 +402,7 @@ impl Fuzzer {
         let mut new_constraints = self.seed_infer(&p)?;
         
         // Infer preferred and required contexts between calls
-        if config::ENABLE_CONTEXT_LEARNING.load(Ordering::SeqCst) {
+        if is_enable_context_learning() {
             new_constraints.extend(self.infer_preferred_and_required_contexts(&p, status)?);
         }
         

@@ -29,6 +29,7 @@ pub enum AssertRule {
     /// A special assertion for graceful failure cases, checking if return value is in the error code list
     GracefulFailure {
         stmt: WeakStmtIndex,
+        error_codes: Vec<crate::fuzz::constraints::ErrorCode>,
     }
 }
 
@@ -68,10 +69,9 @@ impl AssertStmt {
         }
     }
     // Update to use error codes from constraints directly
-    pub fn assert_graceful_failure(stmt: StmtIndex) -> Self {
-        // Ignore the expected parameter for backward compatibility
+    pub fn assert_graceful_failure(stmt: StmtIndex, error_codes: Vec<crate::fuzz::constraints::ErrorCode>) -> Self {
         Self {
-            rule: AssertRule::GracefulFailure { stmt: stmt.downgrade() },
+            rule: AssertRule::GracefulFailure { stmt: stmt.downgrade(), error_codes },
         }
     }
     pub fn get_stmt(&self) -> Option<&WeakStmtIndex> {
@@ -79,7 +79,7 @@ impl AssertStmt {
             AssertRule::NonNull { stmt } => Some(stmt),
             AssertRule::Eq { stmt, expected: _ } => Some(stmt),
             AssertRule::Neq { stmt, expected: _ } => Some(stmt),
-            AssertRule::GracefulFailure { stmt } => Some(stmt),
+            AssertRule::GracefulFailure { stmt, error_codes: _ } => Some(stmt),
             _ => None
         }
     }
@@ -195,47 +195,34 @@ impl StmtView for AssertStmt {
                     }
                 }
             }
-            AssertRule::GracefulFailure { stmt } => {
+            AssertRule::GracefulFailure { stmt, error_codes } => {
                 let index = stmt.get();
-                crate::log!(
-                    debug,
-                    "assert graceful failure at {index}"
-                );
                 if let FuzzStmt::Call(call) = &used_stmts[index].stmt {
+                    let error_code_values: Vec<i64> = error_codes.iter().map(|ec| ec.value).collect();
                     crate::log!(
                         debug,
-                        "For function {}",
-                        call.fg.f_name
+                        "Error codes: {:?}",
+                        error_code_values
                     );
-                    if let Some(val) = &call.ret {
-                        // Get all defined error codes from constraints
-                        let error_codes = constraints::get_error_codes();
-                        
-                        // If no error codes are defined, use default -2
-                        let error_values = if error_codes.is_empty() {
-                            vec![-2]
-                        } else {
-                            error_codes.iter().map(|e| e.value).collect::<Vec<_>>()
-                        };
-                        
+
+                    if let Some(val) = &call.ret {                    
                         // Serialize the return value for comparison
                         let val_str = val.serialize()?;
                         
+                        // Try to parse the return value as an integer
+                        let val_int = match val_str.parse::<i64>() {
+                            Ok(val) => Some(val),
+                            Err(_) => None,
+                        };
+                        
                         // Check if the return value matches any of the error codes
-                        let is_error_code = error_values.iter().any(|&code| {
-                            // Convert error code to string for comparison
-                            let code_str = if let Ok(code_i32) = i32::try_from(code) {
-                                code_i32.to_string()
-                            } else {
-                                code.to_string()
-                            };
-                            
-                            // Check if the function returned this error code
-                            val_str == code_str
-                        });
+                        let is_error_code = if let Some(val_int) = val_int {
+                            error_code_values.contains(&val_int)
+                        } else {
+                            false
+                        };
                         
                         if is_error_code {
-                            crate::log!(debug, "FOUND A GRACEFUL FAILURE: {}", val_str);
                             eyre::bail!(crate::HopperError::AssertError {
                                 msg: format!(
                                     "graceful failure check failed: {} returned error code {}, expected non-error execution",
@@ -243,6 +230,8 @@ impl StmtView for AssertStmt {
                                 ),
                                 silent: false
                             });
+                        } else {
+                            crate::log!(debug, "Value {} is NOT considered an error code for {}", val_str, call.fg.f_name);
                         }
                     }
                 }
@@ -283,8 +272,9 @@ impl CloneProgram for AssertRule {
                 stmt: stmt.clone_with_program(program),
                 expected: expected.clone_with_program(program),
             },
-            AssertRule::GracefulFailure { stmt } => AssertRule::GracefulFailure {
+            AssertRule::GracefulFailure { stmt, error_codes } => AssertRule::GracefulFailure {
                 stmt: stmt.clone_with_program(program),
+                error_codes: error_codes.clone(),
             },
             _ => self.clone(),
         }

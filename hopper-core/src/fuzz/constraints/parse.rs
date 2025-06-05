@@ -11,17 +11,20 @@ impl Constraints {
         let mut buf = String::new();
         for (f, constraint) in self.func_constraints.iter() {
             let _ = writeln!(buf, "func {} = {}", f, constraint.serialize()?);
+            
+            // Save error codes associated with this function
+            for error in &constraint.error_codes {
+                if let Some(desc) = &error.description {
+                    let _ = writeln!(buf, "err {} [{}] \"{}\"", error.value, f, desc);
+                } else {
+                    let _ = writeln!(buf, "err {} [{}]", error.value, f);
+                }
+            }
         }
         for (t, constraint) in self.type_constraints.iter() {
             let _ = writeln!(buf, "type {} = {}", t, constraint.serialize()?);
         }
-        for error in &self.error_codes {
-            if let Some(desc) = &error.description {
-                let _ = writeln!(buf, "err {} \"{}\"", error.value, desc);
-            } else {
-                let _ = writeln!(buf, "err {}", error.value);
-            }
-        }
+        
         if !buf.is_empty() {
             let mut f = std::fs::File::create(path)?;
             crate::log!(info, "write constraints to file : {:?}", path);
@@ -99,6 +102,7 @@ impl Constraints {
 
     fn read_from_custom_buf(&mut self, buf: &[u8]) -> eyre::Result<()> {
         let mut need_build_graph = false;
+        
         for line in buf.lines() {
             let line = line.context("fail to read rule line")?;
             crate::log!(trace, "custom line: {line}");
@@ -110,24 +114,50 @@ impl Constraints {
             match ty {
                 "err" => {
                     de.trim_start();
+                    // Format: err <value> [function_name] "description"
                     let value_str = de.next_token_until(" ")?.trim();
                     let value = value_str.parse::<i64>()
                         .with_context(|| format!("Failed to parse error code value: {}", value_str))?;
                     
                     de.trim_start();
-                    // Check for optional description in quotes
+                    de.eat_token("[")?;
+                    let f_name = de.next_token_until("]")?.trim().to_string();
+                    de.trim_start();
+                    
                     let description = if de.peek_char() == Some('"') {
-                        de.eat_token("\"")?;
-                        let desc = de.next_token_until("\"")?;
-                        de.eat_token("\"")?;
-                        Some(desc.to_string())
+                        if !de.buf.contains('"') || de.buf.chars().filter(|&c| c == '"').count() < 2 {
+                            crate::log!(warn, "Error code description is missing closing quote: {}", de.buf);
+                            if de.strip_token("\"") {
+                                de.buf = "";
+                            }
+                            None
+                        } else {
+                            de.eat_token("\"")?;
+                            let desc = de.next_token_until("\"")?;
+                            Some(desc.to_string())
+                        }
                     } else {
                         None
                     };
                     
-                    let desc_for_log = description.as_deref().unwrap_or("").to_string();
-                    self.error_codes.push(ErrorCode { value, description });
-                    crate::log!(info, "Added error code {} {}", value, desc_for_log);
+                    let error_code = ErrorCode { value, description };
+                    let desc_for_log = error_code.description.as_deref().unwrap_or("").to_string();
+                    
+                    // Create function constraint if it doesn't exist
+                    if self.get_func_constraint(&f_name).is_none() {
+                        self.init_func_constraint(&f_name)?;
+                    }
+                    
+                    // Add error code to function constraint
+                    if let Ok(fc) = self.get_func_constraint_mut(&f_name) {
+                        fc.error_codes.push(error_code);
+                        crate::log!(debug, "Function {} now has {} error codes: {:?}", 
+                                   f_name, fc.error_codes.len(), fc.error_codes);
+                    } else {
+                        crate::log!(warn, "Failed to get mutable function constraint for {}", f_name);
+                    }
+
+                    continue;
                 }
                 "alias" => {
                     let alias_name = de.next_token_until("<-")?.trim();
@@ -219,9 +249,11 @@ impl Constraints {
                 _ => {}
             }
         }
+        
         if need_build_graph {
             global_gadgets::get_mut_instance().build_arg_and_ret_graph();
         }
+        
         Ok(())
     }
 }

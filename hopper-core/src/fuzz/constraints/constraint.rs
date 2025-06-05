@@ -49,6 +49,8 @@ pub struct FuncConstraint {
     pub role: role::FuncRole,
     // Return's type
     pub ret: ret::RetType,
+    /// Error codes that can be returned by this function for graceful failure
+    pub error_codes: Vec<ErrorCode>,
 }
 
 /// Type constraint
@@ -279,6 +281,17 @@ impl FuncConstraint {
             .list
             .iter()
             .any(|item| matches!(item.constraint, Constraint::File { .. }))
+    }
+
+    /// Get all error codes for this function
+    pub fn get_error_codes(&self) -> &[ErrorCode] {
+        &self.error_codes
+    }
+
+    /// Check if a value matches any of the function's error codes
+    pub fn is_error_code(&self, value: i64) -> bool {
+        let matching_error = self.error_codes.iter().find(|ec| ec.value == value);
+        matching_error.is_some()
     }
 }
 

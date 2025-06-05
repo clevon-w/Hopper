@@ -189,7 +189,7 @@ fn sanitize_crash(
         // hopper::log!(info, "re-check execution");
         for _ in 0..10 {
             let status = fuzzer.executor.execute_program(&crash_p)?;
-            if status.is_crash() {
+            if status.is_crash_or_graceful_failure() {
                 num_fail += 1;
             }
         }

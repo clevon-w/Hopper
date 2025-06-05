@@ -184,7 +184,7 @@ pub fn infer_crash(file: &str) -> eyre::Result<()> {
         let list = fuzzer.seed_infer(&program)?;
         crate::log!(info, "found constraints: {list:?}"); 
     }
-    if status.is_crash() {
+    if status.is_crash_or_graceful_failure() {
         let infer_length = std::env::args().any(|f| f == "--length");
         let infer_padding = std::env::args().any(|f| f == "--padding");
         if infer_length || infer_padding {

@@ -77,6 +77,9 @@ impl StatusType {
     pub fn is_graceful_failure(&self) -> bool {
         matches!(self, Self::GracefulFailure)
     }
+    pub fn is_crash_or_graceful_failure(&self) -> bool {
+        matches!(self, Self::Crash { signal: _ } | Self::GracefulFailure)
+    }
     pub fn is_abort(&self) -> bool {
         matches!(
             self,

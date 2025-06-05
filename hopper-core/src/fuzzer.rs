@@ -499,9 +499,9 @@ impl Fuzzer {
 
         // Here we sanitize the program to mark the possible false positive results.
         // We infer the constraint for crash or timeout
-        let new_constraints = if assert_failure {
+        let new_constraints = if assert_failure && !status.is_graceful_failure() {
             vec![]
-        } else if status.is_crash() {
+        } else if status.is_crash_or_graceful_failure() {
             self.crash_infer(&p)
                 .with_context(|| format!("crash update constraint failed: {p}"))?
         } else if status.is_timeout() {

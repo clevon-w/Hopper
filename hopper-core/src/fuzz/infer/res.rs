@@ -224,7 +224,7 @@ impl Fuzzer {
             // the root cause is `y`'s value, but it will OOM/timeout if we set x to maximal if y is also huge.
             // so we check if the crash path is included by the path before mutating the number.
             if self.observer.feedback.path.is_inclued_by(&path) {
-                if status.is_timeout() || status.is_crash() {
+                if status.is_timeout() || status.is_crash_or_graceful_failure() {
                     log!(
                         warn,
                         "loc <{}>{} is fail with huge number",

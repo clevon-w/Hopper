@@ -239,7 +239,7 @@ impl Fuzzer {
                     if let Some(call) = crash_program.get_call_stmt_mut(fail_at) {
                         call.failure = true;
                         let mut infered = vec![];
-                        if status.is_crash() {
+                        if status.is_crash_or_graceful_failure() {
                             infered = self.crash_infer(&crash_program)?
                         } else if status.is_timeout() {
                             infered = self.timeout_infer(&crash_program)?
@@ -409,7 +409,7 @@ impl Fuzzer {
                 let status = self.executor.execute_program(&p)?;
                 crate::log!(trace, "updated program: {p}");
                 // if it still crash we run next loop
-                if status.is_crash() {
+                if status.is_crash_or_graceful_failure() {
                     crate::log!(trace, "still crash after length inference");
                     continue;
                 }

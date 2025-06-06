@@ -1,4 +1,10 @@
 // func_include *
-func_exclude gzprintf
+// func_exclude gzprintf
 // func_include gzfwrite,gzopen
 // func_include gzopen,gzread,gzdopen,gzbuffer,gzclose
+
+err 2 [inflate] "Z_NEED_DICT"
+err -2 [inflate] "Z_STREAM_ERROR"
+err -3 [inflate] "Z_DATA_ERROR"
+err -4 [inflate] "Z_MEM_ERROR"
+err -5 [inflate] "Z_BUF_ERROR"

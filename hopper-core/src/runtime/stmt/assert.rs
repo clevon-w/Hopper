@@ -5,7 +5,7 @@
 use eyre::ContextCompat;
 use hopper_derive::Serde;
 
-use crate::{feedback::ResourceStates, runtime::*, utils};
+use crate::{feedback::ResourceStates, runtime::*, utils, fuzz::constraints};
 
 #[derive(Debug, Clone, Serde)]
 pub enum AssertRule {
@@ -25,6 +25,11 @@ pub enum AssertRule {
     Neq {
         stmt: WeakStmtIndex,
         expected: StmtIndex,
+    },
+    /// A special assertion for graceful failure cases, checking if return value is in the error code list
+    GracefulFailure {
+        stmt: WeakStmtIndex,
+        error_codes: Vec<crate::fuzz::constraints::ErrorCode>,
     }
 }
 
@@ -63,11 +68,18 @@ impl AssertStmt {
             rule: AssertRule::Neq { stmt: stmt.downgrade(), expected },
         }
     }
+    // Update to use error codes from constraints directly
+    pub fn assert_graceful_failure(stmt: StmtIndex, error_codes: Vec<crate::fuzz::constraints::ErrorCode>) -> Self {
+        Self {
+            rule: AssertRule::GracefulFailure { stmt: stmt.downgrade(), error_codes },
+        }
+    }
     pub fn get_stmt(&self) -> Option<&WeakStmtIndex> {
         match &self.rule {
             AssertRule::NonNull { stmt } => Some(stmt),
             AssertRule::Eq { stmt, expected: _ } => Some(stmt),
             AssertRule::Neq { stmt, expected: _ } => Some(stmt),
+            AssertRule::GracefulFailure { stmt, error_codes: _ } => Some(stmt),
             _ => None
         }
     }
@@ -135,13 +147,13 @@ impl StmtView for AssertStmt {
                                 eyre::bail!("expected statement should be call or load.")
                             }
                         };
-                        eyre::ensure!(
-                            val.type_id() == expected_val.type_id(),
-                            "the compare values should have the same types"
-                        );
+                        
                         let val_str = val.serialize()?;
                         let expected_str = expected_val.serialize()?;
-                        if val_str != expected_str {
+
+                        // Same type check has to be done here
+                        // because functions that do not return custom error, might return things other than an integer
+                        if val.type_id() == expected_val.type_id() && val_str != expected_str {
                             eyre::bail!(crate::HopperError::AssertError {
                                 msg: format!(
                                     "assert equal but {val_str} != {expected_str}",
@@ -183,6 +195,47 @@ impl StmtView for AssertStmt {
                     }
                 }
             }
+            AssertRule::GracefulFailure { stmt, error_codes } => {
+                let index = stmt.get();
+                if let FuzzStmt::Call(call) = &used_stmts[index].stmt {
+                    let error_code_values: Vec<i64> = error_codes.iter().map(|ec| ec.value).collect();
+                    crate::log!(
+                        debug,
+                        "Error codes: {:?}",
+                        error_code_values
+                    );
+
+                    if let Some(val) = &call.ret {                    
+                        // Serialize the return value for comparison
+                        let val_str = val.serialize()?;
+                        
+                        // Try to parse the return value as an integer
+                        let val_int = match val_str.parse::<i64>() {
+                            Ok(val) => Some(val),
+                            Err(_) => None,
+                        };
+                        
+                        // Check if the return value matches any of the error codes
+                        let is_error_code = if let Some(val_int) = val_int {
+                            error_code_values.contains(&val_int)
+                        } else {
+                            false
+                        };
+                        
+                        if is_error_code {
+                            eyre::bail!(crate::HopperError::AssertError {
+                                msg: format!(
+                                    "graceful failure check failed: {} returned error code {}, expected non-error execution",
+                                    call.fg.f_name, val_str
+                                ),
+                                silent: false
+                            });
+                        } else {
+                            crate::log!(debug, "Value {} is NOT considered an error code for {}", val_str, call.fg.f_name);
+                        }
+                    }
+                }
+            }
             AssertRule::None => {}
         }
         Ok(())
@@ -218,6 +271,10 @@ impl CloneProgram for AssertRule {
             AssertRule::Neq { stmt, expected } => AssertRule::Neq {
                 stmt: stmt.clone_with_program(program),
                 expected: expected.clone_with_program(program),
+            },
+            AssertRule::GracefulFailure { stmt, error_codes } => AssertRule::GracefulFailure {
+                stmt: stmt.clone_with_program(program),
+                error_codes: error_codes.clone(),
             },
             _ => self.clone(),
         }

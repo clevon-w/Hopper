@@ -1,0 +1,19 @@
+// Error code examples
+// These are error codes that can be returned by various functions
+
+// Common error codes with descriptions
+err -1 "Generic failure"
+err -2 "Invalid argument"
+err -22 "Invalid argument (EINVAL)"
+err -13 "Permission denied (EACCES)"
+err -14 "Bad address (EFAULT)"
+
+// Library-specific error codes
+err 1 "Success with warning" 
+err 2 "Partial completion"
+err -100 "Unknown error"
+err -101 "Feature not supported"
+err -102 "Invalid handle" 
+
+// Function includes/excludes
+func_include *

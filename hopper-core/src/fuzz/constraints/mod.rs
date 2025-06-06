@@ -32,7 +32,6 @@ thread_local! {
 }
 
 pub fn init_constraints() -> eyre::Result<bool> {
-    log!(info, "init constraint...");
     // load configuration file if it exists
     let constraint_file = config::constraint_file_path();
     CONSTRAINTS.with(|constraints| {

@@ -1,6 +1,6 @@
 use eyre::Context;
 
-use crate::{fuzz::rng, runtime::*, utils};
+use crate::{filter_function_constraint_with, fuzz::rng, runtime::*, utils};
 
 impl FuzzProgram {
     /// Generate random program,
@@ -49,7 +49,25 @@ impl FuzzProgram {
             .with_context(|| format!("fail to generate call `{f_name}`"))?;
         // only track target function
         call.track_cov = true;
-        let _stmt = program.append_stmt(call);
+        let call_idx = program.append_stmt(call);
+
+        // Create an assertion to check for graceful failures
+        if let Ok(error_codes) = crate::inspect_function_constraint_with(f_name, |fc| {
+            Ok(fc.get_error_codes().to_vec())
+        }) {
+            if !error_codes.is_empty() {
+                crate::log!(debug, "Found {} error codes for function {}", error_codes.len(), f_name);
+                
+                // Generate an assert statement for the target call with the error codes directly
+                let assert_stmt = AssertStmt::assert_graceful_failure(call_idx, error_codes.clone());
+                
+                // Append the assert statement into the DSL program
+                program.append_stmt(assert_stmt);
+                
+                crate::log!(debug, "Program after insert graceful failure assertion: {}", program.serialize_all().unwrap());
+            }
+        }
+        
         program.check_ref_use()?;
         program
             .refine_program()

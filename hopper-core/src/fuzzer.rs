@@ -92,17 +92,17 @@ impl Fuzzer {
             let curr_density = self.observer.branches_state.get_coverage_density();
             if curr_density == self.previous_density {
                 self.same_density_count += 1;
-            } else if curr_density > self.previous_density {
-                log!(warn, "Coverage density is increased from {:.2} to {:.2}, turning off exploratory fuzzing!", self.previous_density, curr_density);
+            } else if curr_density > self.previous_density && is_enable_exploratory_fuzzing() {
+                log!(warn, "After {} rounds, coverage density has increased from {:.2} to {:.2}, turning off exploratory fuzzing!", self.same_density_count, self.previous_density, curr_density);
                 self.previous_density = curr_density;
                 self.same_density_count = 0;
                 set_enable_exploratory_fuzzing(false);
             }
 
-            if self.same_density_count > config::ROUND_SAME_DENSITY_NUM {
+            if self.same_density_count > config::ROUND_SAME_DENSITY_NUM && !is_enable_exploratory_fuzzing() {
                 log!(
                     warn,
-                    "Coverage density is not changed for {} rounds, turning on exploratory fuzzing !",
+                    "Coverage density has not changed for {} rounds, turning on exploratory fuzzing!",
                     self.same_density_count
                 );
                 set_enable_exploratory_fuzzing(true);

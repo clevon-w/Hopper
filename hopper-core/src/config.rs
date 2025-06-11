@@ -101,7 +101,7 @@ pub const MAX_ROUND_FAIL_NUM: usize = 20;
 // The maximal number of rounds if we has found nothing with single call
 pub const ROUND_STUCK_NUM: usize = 50;
 pub const ENABLE_APPEND_NEW_TARGET: bool = true;
-pub const ROUND_SAME_DENSITY_NUM: usize = 1000;
+pub const ROUND_SAME_DENSITY_NUM: usize = 5000;
 /// --- Constraint ---
 pub const MAX_RANGE_NUM: u64 = 4096;
 pub const RESERVED_FD_MIN: i32 = 3;

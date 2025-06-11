@@ -632,10 +632,9 @@ impl CallStmt {
         let mut use_f_name = None;
         // add optional implict context constraint
         let chance = if is_enable_exploratory_fuzzing() {
-            crate::log!(debug, "calling rarely");
-            rng::rarely()
+            false
         } else {
-            rng::coin()
+            rng::likely()
         };
         if chance {
             filter_function_constraint_with(&self.name, |fc| {
@@ -748,10 +747,9 @@ impl CallStmt {
         let mut relative_f = None;
         // add optional context
         let chance = if is_enable_exploratory_fuzzing() {
-            crate::log!(debug, "calling rarely");
-            rng::rarely()
+            false
         } else {
-            rng::coin()
+            rng::likely()
         };
         if !init_opaque && chance {
             let mut use_ctx = None;

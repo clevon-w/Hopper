@@ -310,7 +310,7 @@ impl Fuzzer {
     
 
                 if modified_bucket_quality < original_bucket_quality {
-                    crate::log!(debug, "Coverage density decreased from {} to {}", original_bucket_quality, modified_bucket_quality);
+                    crate::log!(debug, "Bucket score decreased from {} to {}", original_bucket_quality, modified_bucket_quality);
                     
                     // Check if this preferred context already exists
                     let context_exists = filter_function_constraint_with(target_func_name, |fc| {
